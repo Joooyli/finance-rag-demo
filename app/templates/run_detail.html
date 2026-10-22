@@ -1,0 +1,88 @@
+{% extends "base.html" %}
+{% block title %}解析详情 - RAG 控制台{% endblock %}
+{% block content %}
+<h1>解析详情 <span class="mono" style="font-size:14px">{{ run.run_id }}</span></h1>
+<p class="muted"><a href="/ui/runs">← 返回解析记录</a></p>
+
+<div class="cards">
+  <div class="card"><div class="label">文件</div><div class="value">{{ run.source }}</div></div>
+  <div class="card"><div class="label">状态</div><div class="value {{ 'ok' if run.status == 'success' else 'warn' }}">{{ run.status }}</div></div>
+  <div class="card"><div class="label">总页数</div><div class="value">{{ (run.counts or {}).get('pages_total', '') }}</div></div>
+  <div class="card"><div class="label">有文字页</div><div class="value">{{ (run.counts or {}).get('pages_with_text', '') }}</div></div>
+  <div class="card"><div class="label">切块数</div><div class="value">{{ chunk_total }}</div></div>
+  <div class="card"><div class="label">是否已入库</div><div class="value">{{ '是' if (run.index or {}).get('enabled') else '否' }}</div></div>
+</div>
+
+{% if run.error %}
+<p class="warn">失败原因：{{ run.error }}</p>
+{% endif %}
+
+<h2>本次解析参数</h2>
+<table>
+  <tbody>
+  {% for key, value in (run.config or {}).items() %}
+    <tr><th style="width:260px">{{ key }}</th><td class="mono">{{ value }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>解析方式分布</h2>
+{% set modes = (run.counts or {}).get('pages_by_mode', {}) %}
+{% if modes %}
+<table>
+  <thead><tr><th>方式</th><th>页数</th></tr></thead>
+  <tbody>
+  {% for mode, count in modes.items() %}
+    <tr><td class="mono">{{ mode }}</td><td class="num">{{ count }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">没有记录解析方式（可能是旧版本生成的解析日志）。</p>
+{% endif %}
+
+{% if missing_pages %}
+<p class="warn">以下页没有任何可提取文字：{{ missing_pages|join(', ') }}</p>
+{% endif %}
+
+<h2>逐页结果</h2>
+<table>
+  <thead>
+    <tr>
+      <th style="width:60px">页码</th>
+      <th style="width:150px">解析方式</th>
+      <th style="width:90px">原生字符</th>
+      <th style="width:90px">图片OCR</th>
+      <th style="width:90px">整页OCR</th>
+      <th style="width:80px">总字符</th>
+      <th style="width:70px">切块</th>
+      <th>文本预览</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for page in pages %}
+    <tr id="page-{{ page.page }}">
+      <td class="num">{{ page.page }}</td>
+      <td class="mono">{{ page.mode }}</td>
+      <td class="num">{{ page.native_chars }}</td>
+      <td class="num">{{ page.image_ocr_chars }}</td>
+      <td class="num">{{ page.full_page_ocr_chars }}</td>
+      <td class="num">{{ page.chars }}</td>
+      <td class="num">{{ page.chunks }}</td>
+      <td>
+        {% if page.chars > 0 %}
+        <div>{{ page.text[:160] }}{% if page.chars > 160 %}…{% endif %}</div>
+        <details><summary>展开该页全文</summary><pre class="text">{{ page.text }}</pre></details>
+        {% else %}
+        <span class="muted">（无文字）</span>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+{% if not has_chunks_file %}
+<p class="warn">没有找到 chunks.jsonl：本次解析可能被中断，或解析日志功能被关闭。</p>
+{% endif %}
+{% endblock %}

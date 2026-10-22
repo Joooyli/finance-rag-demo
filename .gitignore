@@ -1,0 +1,13 @@
+.venv/
+__pycache__/
+*.py[cod]
+.env
+data/source/*
+!data/source/.gitkeep
+data/chroma_db/*
+!data/chroma_db/.gitkeep
+data/parse_log/*
+!data/parse_log/.gitkeep
+data/logs/*
+!data/logs/.gitkeep
+.pytest_cache/

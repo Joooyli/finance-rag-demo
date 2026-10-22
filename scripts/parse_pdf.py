@@ -1,0 +1,100 @@
+"""Parse PDFs into chunks and write the intermediate result to data/parse_log.
+
+This script never touches Chroma and never calls the cloud LLM: it is the
+"inspect first" step. Run ``python -m scripts.index_parsed`` afterwards to embed
+and store what you have verified.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import sys
+from pathlib import Path
+
+# Windows consoles default to a legacy code page; keep Chinese output readable.
+for stream in (sys.stdout, sys.stderr):
+    if hasattr(stream, "reconfigure"):
+        stream.reconfigure(encoding="utf-8")
+
+from app import config
+from app.logging_config import configure_logging
+from app.rag_pipeline import parse_document
+
+
+def collect_targets(arguments: list[str]) -> list[Path]:
+    if arguments:
+        return [Path(item) for item in arguments]
+    if not config.PDF_DIR.exists():
+        return []
+    return sorted(config.PDF_DIR.glob("*.pdf"))
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="只解析 PDF 并落盘日志，不入库")
+    parser.add_argument("pdf", nargs="*", help="PDF 路径；省略时解析 data/source 下全部 PDF")
+    parser.add_argument("--no-log", action="store_true", help="不写 data/parse_log（仅打印统计）")
+    parser.add_argument("--json", action="store_true", help="以 JSON 输出")
+    args = parser.parse_args()
+
+    configure_logging()
+    targets = collect_targets(args.pdf)
+    if not targets:
+        print(f"没有找到 PDF：{config.PDF_DIR}")
+        return 1
+
+    results = []
+    failed = 0
+    for target in targets:
+        print(f"\n=== 解析 {target} ===")
+        try:
+            result = parse_document(target, write_log=not args.no_log)
+        except Exception as exc:
+            failed += 1
+            print(f"失败：{type(exc).__name__}: {exc}")
+            results.append({"file": str(target), "error": f"{type(exc).__name__}: {exc}"})
+            continue
+
+        counts = result.counts
+        payload = {
+            "file": target.name,
+            "run_id": result.run_id,
+            "run_dir": result.run_dir,
+            "pages_total": counts.get("pages_total", 0),
+            "pages_with_text": counts.get("pages_with_text", 0),
+            "pages_by_mode": counts.get("pages_by_mode", {}),
+            "chunks": counts.get("chunks", 0),
+            "chars": counts.get("chars", 0),
+        }
+        results.append(payload)
+
+        if not args.json:
+            print(f"总页数      : {payload['pages_total']}")
+            print(f"有文字页数  : {payload['pages_with_text']}")
+            print(f"解析方式    : {payload['pages_by_mode']}")
+            print(f"切块数      : {payload['chunks']}")
+            print(f"切块总字符  : {payload['chars']}")
+            if payload["run_id"]:
+                print(f"日志目录    : {result.run_dir}")
+
+            empty_pages = [
+                page["page"] for page in result.pages if not page.get("text", "").strip()
+            ]
+            if empty_pages:
+                print(f"注意：以下页没有提取到文字：{empty_pages}")
+            ocr_pages = [
+                page["page"] for page in result.pages if page.get("mode") in {"full_page_ocr", "image_ocr"}
+            ]
+            if ocr_pages:
+                print(f"提示：以下页使用了 OCR，建议人工核对：{ocr_pages}")
+
+    if args.json:
+        print(json.dumps(results, ensure_ascii=False, indent=2))
+    else:
+        print("\n检查完成后执行入库：python -m scripts.index_parsed --run-id <run_id>")
+
+    return 1 if failed else 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

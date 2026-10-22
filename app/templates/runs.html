@@ -1,0 +1,39 @@
+{% extends "base.html" %}
+{% block title %}解析记录 - RAG 控制台{% endblock %}
+{% block content %}
+<h1>解析记录</h1>
+<p class="muted">目录：{{ parse_log_dir }}（每次解析一个子目录）</p>
+
+{% if runs %}
+<table>
+  <thead>
+    <tr>
+      <th>run_id</th>
+      <th>文件</th>
+      <th>状态</th>
+      <th>页数</th>
+      <th>有文字页</th>
+      <th>切块</th>
+      <th>已入库</th>
+      <th>开始时间</th>
+    </tr>
+  </thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td class="mono"><a href="/ui/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
+      <td>{{ run.source }}</td>
+      <td class="{{ 'ok' if run.status == 'success' else 'warn' }}">{{ run.status }}</td>
+      <td class="num">{{ (run.counts or {}).get('pages_total', '') }}</td>
+      <td class="num">{{ (run.counts or {}).get('pages_with_text', '') }}</td>
+      <td class="num">{{ (run.counts or {}).get('chunks', '') }}</td>
+      <td class="num">{{ '是' if (run.index or {}).get('enabled') else '否' }}</td>
+      <td class="mono">{{ run.started_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">还没有解析记录。执行 <span class="mono">python -m scripts.parse_pdf</span> 生成。</p>
+{% endif %}
+{% endblock %}

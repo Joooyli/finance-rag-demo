@@ -1,0 +1,50 @@
+{% extends "base.html" %}
+{% block title %}切块详情 - RAG 控制台{% endblock %}
+{% block content %}
+<h1>切块详情</h1>
+
+<p class="muted"><a href="/ui/chunks">← 返回切块列表</a></p>
+
+<div class="cards">
+  <div class="card"><div class="label">文件</div><div class="value">{{ metadata.get('source', '') }}</div></div>
+  <div class="card"><div class="label">页码</div><div class="value">{{ metadata.get('page', '') }}</div></div>
+  <div class="card"><div class="label">块序号</div><div class="value">{{ metadata.get('chunk_index', '') }}</div></div>
+  <div class="card"><div class="label">字符数</div><div class="value">{{ chars }}</div></div>
+</div>
+
+<h2>全文</h2>
+<pre class="text" style="max-height:none">{{ text }}</pre>
+
+<h2>元数据</h2>
+<table>
+  <tbody>
+  {% for key, value in metadata.items() %}
+    <tr><th style="width:220px">{{ key }}</th><td class="mono">{{ value }}</td></tr>
+  {% endfor %}
+  </tbody>
+</table>
+
+<h2>同一页的其他切块</h2>
+{% if siblings %}
+<table>
+  <thead><tr><th>块序号</th><th>字符数</th><th>chunk_id</th></tr></thead>
+  <tbody>
+  {% for item in siblings %}
+    <tr>
+      <td class="num">{{ item.chunk_index }}</td>
+      <td class="num">{{ item.chars }}</td>
+      <td class="mono">
+        {% if item.is_current %}
+          {{ item.chunk_id }} <span class="badge">当前</span>
+        {% else %}
+          <a href="/ui/chunks/{{ item.chunk_id }}">{{ item.chunk_id }}</a>
+        {% endif %}
+      </td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">没有同页切块信息。</p>
+{% endif %}
+{% endblock %}

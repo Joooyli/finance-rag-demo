@@ -1,0 +1,79 @@
+{% extends "base.html" %}
+{% block title %}概览 - RAG 控制台{% endblock %}
+{% block content %}
+<h1>概览</h1>
+
+<div class="cards">
+  <div class="card">
+    <div class="label">集合</div>
+    <div class="value">{{ collection_name }}</div>
+  </div>
+  <div class="card">
+    <div class="label">已入库切块</div>
+    <div class="value">{{ chunk_total }}</div>
+  </div>
+  <div class="card">
+    <div class="label">解析记录</div>
+    <div class="value">{{ runs|length }}</div>
+  </div>
+  <div class="card">
+    <div class="label">入库开关 ENABLE_INDEXING</div>
+    <div class="value {{ 'ok' if indexing_enabled else 'warn' }}">{{ indexing_enabled }}</div>
+  </div>
+  <div class="card">
+    <div class="label">解析日志开关 PARSE_LOG_ENABLED</div>
+    <div class="value {{ 'ok' if parse_log_enabled else 'warn' }}">{{ parse_log_enabled }}</div>
+  </div>
+</div>
+
+<p class="muted">
+  数据库：{{ chroma_dir }}<br>
+  解析日志：{{ parse_log_dir }}
+</p>
+
+{% if not indexing_enabled %}
+<p class="warn">
+  当前 ENABLE_INDEXING=false：建库流程只会解析并写日志，不会写入向量库。检查通过后再打开该开关或执行
+  <span class="mono">python -m scripts.index_parsed</span>。
+</p>
+{% endif %}
+
+<h2>文件分布</h2>
+{% if sources %}
+<table>
+  <thead><tr><th>文件</th><th>切块数</th><th></th></tr></thead>
+  <tbody>
+  {% for name, count in sources %}
+    <tr>
+      <td>{{ name }}</td>
+      <td class="num">{{ count }}</td>
+      <td><a href="/ui/chunks?source={{ name|urlencode }}">查看切块</a></td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">当前集合为空。先执行解析：<span class="mono">python -m scripts.parse_pdf</span></p>
+{% endif %}
+
+<h2>最近解析记录</h2>
+{% if runs %}
+<table>
+  <thead><tr><th>run_id</th><th>文件</th><th>状态</th><th>页数</th><th>切块</th><th>开始时间</th></tr></thead>
+  <tbody>
+  {% for run in runs %}
+    <tr>
+      <td class="mono"><a href="/ui/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
+      <td>{{ run.source }}</td>
+      <td class="{{ 'ok' if run.status == 'success' else 'warn' }}">{{ run.status }}</td>
+      <td class="num">{{ (run.counts or {}).get('pages_total', '') }}</td>
+      <td class="num">{{ (run.counts or {}).get('chunks', '') }}</td>
+      <td class="mono">{{ run.started_at }}</td>
+    </tr>
+  {% endfor %}
+  </tbody>
+</table>
+{% else %}
+<p class="muted">还没有解析记录。</p>
+{% endif %}
+{% endblock %}
