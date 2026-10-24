@@ -10,7 +10,8 @@ finance-rag-learning/
 │   ├── config.py          # 环境变量和参数（含 ENABLE_INDEXING、PARSE_LOG_*）
 │   ├── logging_config.py  # 运行日志（控制台 + data/logs/app.log）
 │   ├── parse_log.py       # 解析日志：run.json / pages.jsonl / chunks.jsonl
-│   ├── pdf_loader.py      # PDF 文本提取、OCR、逐页解析统计
+│   ├── text_utils.py      # 文本清洗（代理字符、图片标记、空行）
+│   ├── pdf_loader.py      # PyMuPDF 2.x 解析：markdown、版面块、页眉剔除
 │   ├── chunker.py         # 文本切块
 │   ├── embeddings.py      # 本地向量计算
 │   ├── vector_store.py    # Chroma 建库与检索

@@ -225,14 +225,26 @@ def ui_run_detail(request: Request, run_id: str):
     page_rows = []
     for page in pages:
         number = page.get("page")
+        # schema v2：mode / elements / raw_text / text；schema v1：native_chars 等旧字段。
+        if "mode" in page:
+            mode = page.get("mode") or ""
+            elements_count = len(page.get("elements") or [])
+            raw_chars = page.get("raw_chars") or len(page.get("raw_text") or "")
+            ocr_used = bool(page.get("ocr_used"))
+        else:
+            mode = "legacy"
+            elements_count = 0
+            raw_chars = page.get("native_chars", 0) + page.get("image_ocr_chars", 0) + page.get("full_page_ocr_chars", 0)
+            ocr_used = bool(page.get("image_ocr_chars") or page.get("full_page_ocr_chars"))
+
         page_rows.append(
             {
                 "page": number,
-                "mode": page.get("mode", ""),
-                "native_chars": page.get("native_chars", 0),
-                "image_ocr_chars": page.get("image_ocr_chars", 0),
-                "full_page_ocr_chars": page.get("full_page_ocr_chars", 0),
-                "chars": page.get("chars", 0),
+                "mode": mode,
+                "ocr_used": ocr_used,
+                "elements_count": elements_count,
+                "raw_chars": raw_chars,
+                "chars": page.get("chars", len(page.get("text") or "")),
                 "chunks": chunks_per_page.get(number, 0),
                 "text": page.get("text", ""),
             }

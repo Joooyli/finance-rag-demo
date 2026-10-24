@@ -83,12 +83,20 @@ def parse_document(
         "chunks": 0,
         "chars": 0,
         "pages_by_mode": {},
+        "ocr_pages": [],
+        "header_blocks": 0,
+        "footer_blocks": 0,
     }
 
     def page_sink(record: dict) -> None:
+        """每页解析完成时回调：累计统计并写 pages.jsonl。"""
         counts["pages_total"] += 1
         mode = record.get("mode", "unknown")
         counts["pages_by_mode"][mode] = counts["pages_by_mode"].get(mode, 0) + 1
+        if record.get("ocr_used"):
+            counts["ocr_pages"].append(record.get("page"))
+        counts["header_blocks"] += int(record.get("header_blocks") or 0)
+        counts["footer_blocks"] += int(record.get("footer_blocks") or 0)
         run.log_page(record)
 
     try:
@@ -209,6 +217,9 @@ def index_pdf(
             "pages_total": counts.get("pages_total", 0),
             "pages_with_text": counts.get("pages_with_text", 0),
             "pages_by_mode": counts.get("pages_by_mode", {}),
+            "ocr_pages": counts.get("ocr_pages", []),
+            "header_blocks": counts.get("header_blocks", 0),
+            "footer_blocks": counts.get("footer_blocks", 0),
             "chunks_parsed": len(result.chunks),
             "chunks_indexed": len(result.chunks) if index_enabled else 0,
             "indexed": index_enabled,

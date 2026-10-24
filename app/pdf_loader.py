@@ -12,9 +12,14 @@ if config.TESSERACT_CMD:
     pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
 
 def clean_text(text: str) -> str:
+    """清理 PDF 提取或 OCR 识别文本中的异常字符和多余空白。"""
+    # 将空字符替换为空格，避免直接删除后相邻文字粘连。
     text = text.replace("\x00", " ")
+    # 将连续的普通空格和制表符合并为一个空格，保留换行。
     text = re.sub(r"[ \t]+", " ", text)
+    # 将三个及以上连续换行压缩为两个，保留段落间隔。
     text = re.sub(r"\n{3,}", "\n\n", text)
+    # 去除整个文本首尾的空白字符，包括空格、制表符和换行。
     return text.strip()
 
 def _ocr_image_bytes(image_bytes: bytes) -> str:

@@ -50,11 +50,10 @@
   <thead>
     <tr>
       <th style="width:60px">页码</th>
-      <th style="width:150px">解析方式</th>
-      <th style="width:90px">原生字符</th>
-      <th style="width:90px">图片OCR</th>
-      <th style="width:90px">整页OCR</th>
-      <th style="width:80px">总字符</th>
+      <th style="width:110px">模式</th>
+      <th style="width:80px">版面块</th>
+      <th style="width:90px">原始字符</th>
+      <th style="width:80px">正文</th>
       <th style="width:70px">切块</th>
       <th>文本预览</th>
     </tr>
@@ -63,10 +62,9 @@
   {% for page in pages %}
     <tr id="page-{{ page.page }}">
       <td class="num">{{ page.page }}</td>
-      <td class="mono">{{ page.mode }}</td>
-      <td class="num">{{ page.native_chars }}</td>
-      <td class="num">{{ page.image_ocr_chars }}</td>
-      <td class="num">{{ page.full_page_ocr_chars }}</td>
+      <td class="mono">{{ page.mode }}{% if page.ocr_used %} <span class="badge">OCR</span>{% endif %}</td>
+      <td class="num">{{ page.elements_count }}</td>
+      <td class="num">{{ page.raw_chars }}</td>
       <td class="num">{{ page.chars }}</td>
       <td class="num">{{ page.chunks }}</td>
       <td>

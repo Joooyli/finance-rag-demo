@@ -63,6 +63,9 @@ def main() -> int:
             "pages_total": counts.get("pages_total", 0),
             "pages_with_text": counts.get("pages_with_text", 0),
             "pages_by_mode": counts.get("pages_by_mode", {}),
+            "ocr_pages": counts.get("ocr_pages", []),
+            "header_blocks": counts.get("header_blocks", 0),
+            "footer_blocks": counts.get("footer_blocks", 0),
             "chunks": counts.get("chunks", 0),
             "chars": counts.get("chars", 0),
         }
@@ -72,21 +75,26 @@ def main() -> int:
             print(f"总页数      : {payload['pages_total']}")
             print(f"有文字页数  : {payload['pages_with_text']}")
             print(f"解析方式    : {payload['pages_by_mode']}")
+            print(f"页眉/页脚块 : {payload['header_blocks']} / {payload['footer_blocks']}（已在解析阶段剔除）")
             print(f"切块数      : {payload['chunks']}")
             print(f"切块总字符  : {payload['chars']}")
             if payload["run_id"]:
                 print(f"日志目录    : {result.run_dir}")
 
             empty_pages = [
-                page["page"] for page in result.pages if not page.get("text", "").strip()
+                page["page"] for page in result.pages if page.get("mode") in {"image_only", "empty"}
             ]
             if empty_pages:
-                print(f"注意：以下页没有提取到文字：{empty_pages}")
+                print(f"注意：以下页没有可切块文字（纯图片或空白）：{empty_pages}")
+
             ocr_pages = [
-                page["page"] for page in result.pages if page.get("mode") in {"full_page_ocr", "image_ocr"}
+                page["page"] for page in result.pages if page.get("ocr_used")
             ]
             if ocr_pages:
                 print(f"提示：以下页使用了 OCR，建议人工核对：{ocr_pages}")
+
+            if payload["pages_with_text"] == 0:
+                print("警告：整份文档没有提取到文字，请检查 OCR 环境（TESSDATA_PREFIX / PATH）。")
 
     if args.json:
         print(json.dumps(results, ensure_ascii=False, indent=2))

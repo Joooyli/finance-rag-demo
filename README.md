@@ -8,8 +8,10 @@ PDF/图片 OCR → 文本切块 → 本地 BGE Embedding → 本地 Chroma → �
 
 - Windows 10/11 x64，推荐 Python 3.11 x64。
 - `chromadb==0.6.3` 固定依赖 `chroma-hnswlib==0.7.6`。该版本提供 Windows Python 3.11 x64 wheel，但没有 Windows Python 3.12/3.13 wheel。在 3.12/3.13 上 pip 会尝试源码编译，未安装 Microsoft C++ Build Tools 时报 `Microsoft Visual C++ 14.0 or greater is required`。
+- 解析器使用 **PyMuPDF 2.x**（`pymupdf>=2`），它内置版面分析（layout）与 Markdown 转换；`pymupdf4llm` 2.0 只是一个占位空包，不需要单独依赖。
+- layout 依赖 `onnxruntime`，OCR 触发还依赖 `opencv-python`，两者都在 `requirements.txt` 里。
+- OCR 需要 Tesseract，并安装 `chi_sim` 与 `eng` 语言包；PyMuPDF 通过 `PATH` 与 `TESSDATA_PREFIX` 找到它，代码会根据 `TESSERACT_CMD` 自动推导。
 - 普通办公电脑可先用 CPU；首次加载 `BAAI/bge-small-zh-v1.5` 需要网络，缓存后可离线。
-- OCR 需要 Tesseract，并安装 `chi_sim` 与 `eng` 语言包。
 - 云端问答需要兼容 OpenAI `POST /chat/completions` 的地址、密钥与模型名。
 
 ## 2. 创建虚拟环境
@@ -47,6 +49,11 @@ PARSE_LOG_ENABLED=true         # 是否把中间解析结果写入 data/parse_lo
 | `ENABLE_INDEXING` | `false` | 是否把切块写入 Chroma |
 | `PARSE_LOG_ENABLED` | `true` | 是否写中间解析日志 |
 | `PARSE_LOG_DIR` | `data/parse_log` | 解析日志目录 |
+| `HEADER_REMOVE` / `FOOTER_REMOVE` | `true` / `true` | 解析阶段剔除页眉/页脚（广告语、页码） |
+| `LAYOUT_ENABLED` | `true` | 是否启用版面分析；关闭后 `elements` 为空 |
+| `TABLE_STRATEGY` | `lines_strict` | 表格识别策略，无框线表格可试 `lines` |
+| `OCR_DPI` | `300` | OCR 渲染精度 |
+| `PARSE_LOG_INCLUDE_ELEMENTS` / `PARSE_LOG_ELEMENT_TEXT_MAX` | `true` / `200` | 日志里是否写版面块及其文本预览长度 |
 | `CHROMA_DIR` | `data/chroma_db` | 向量库目录 |
 | `COLLECTION_NAME` | `finance_pdf_chunks` | 集合名 |
 | `CHUNK_SIZE` / `CHUNK_OVERLAP` | `700` / `100` | 切块大小与重叠字符数 |
@@ -65,9 +72,15 @@ OCR_LANG=chi_sim+eng
 ENABLE_OCR=true
 ```
 
+PyMuPDF 通过 MuPDF 调用 Tesseract，需要能找到 `tesseract.exe` 与 `tessdata`。程序会依据 `TESSERACT_CMD` 自动把所在目录加入 `PATH` 并设置 `TESSDATA_PREFIX`，一般无需手工配置环境变量。
+
+验证 OCR 是否生效：解析后看 `pages.jsonl`，纯图片页的 `mode` 应为 `ocr` 且 `text` 非空；`run.json` 里 `ocr.engine` 应为 `tesseract`。若纯图片页仍是 `image_only`，说明 Tesseract 或 `opencv-python` 缺失。
+
 不需要 OCR 时设 `ENABLE_OCR=false`。OCR 会误识别金融数字、负号、小数点与表格列，重要数值必须回看原页。
 
 ## 5. 第一步：解析并检查（不入库）
+
+> 完整的操作流程、逐项验证脚本与验收清单见 [docs/PDF解析操作与验证.md](docs/PDF解析操作与验证.md)。
 
 将 PDF 放入 `data/source/`，然后解析全部 PDF：
 
@@ -87,15 +100,31 @@ python -m scripts.parse_pdf --json
 
 ```text
 data/parse_log/20250612-103015__frm_notes__a1b2c3d4/
-├── run.json      # 运行状态、PDF 哈希、解析参数、页数与切块统计
-├── pages.jsonl   # 每页一行：解析方式、原生字符数、OCR 字符数、该页文本
+├── run.json      # 状态、PDF 哈希、解析器版本、页眉/OCR/版面参数、统计
+├── pages.jsonl   # 每页一行（schema v2）：版面块、原文、清洗后正文
 └── chunks.jsonl  # 每个切块一行：chunk_id、页码、块序号、字符数、文本
 ```
 
+`pages.jsonl` 每行的核心字段：
+
+| 字段 | 含义 |
+|---|---|
+| `schema_version` / `extractor` / `extractor_version` | 日志版本与解析器（`pymupdf.to_markdown` / `2.0`） |
+| `page` / `page_width` / `page_height` / `rotation` | 页码与页面几何（`page.rect`，已含旋转） |
+| `mode` | `native` / `ocr` / `mixed` / `image_only` / `empty` / `failed` |
+| `elements` | 版面块：`index` / `class` / `bbox` / `pos` / `text`（前 200 字） |
+| `raw_text` | 剔除页眉后的 Markdown 原文（未做额外清洗） |
+| `text` | 规范化后的正文，切块使用的就是它 |
+| `raw_chars` / `chars` / `text_sha1` | 长度与内容指纹 |
+
+注意：`elements[].pos` 指向 `raw_text`，**不要**用它去索引 `text`（规范化会改变长度）。
+
 检查要点：
 
-- `pages.jsonl` 里 `mode` 为 `full_page_ocr` / `image_ocr` 的页，人工核对；
-- 页数是否与 PDF 一致，是否有该有文字却为空的页；
+- 页眉/页脚已在解析阶段剔除（`HEADER_REMOVE=true`），`elements` 里仍保留 `class="page-header"` 的块（`pos` 为 `[0, 0]`），可据此确认删除范围；
+- `mode` 为 `ocr` / `mixed` 的页，人工核对数字与表格；
+- `mode` 为 `image_only` / `empty` 的页，确认是广告页还是解析失败；
+- 页数是否与 PDF 一致；
 - `chunks.jsonl` 每行一个切块，确认数字、表格、标题没有被切断。
 
 也可以启动服务后在浏览器检查（见第 7 节）：`http://127.0.0.1:8000/ui/runs`。
@@ -200,7 +229,7 @@ python -m pytest
 
 ## 11. PDF 与表格解析边界
 
-PyMuPDF 提取可复制文本，Tesseract 识别内嵌图片与低文本页。图片表格通常丢失行列结构；跨页表格、多栏、图表、公式或低质量扫描件建议先用 MinerU 解析成 Markdown/JSON 再接入 `app/chunker.py`。
+解析器是 PyMuPDF 2.x 的 layout + Markdown 转换：版面块会被分类为 `text` / `list-item` / `table` / `picture` / `formula` / `section-header` / `page-header` / `page-footer`，页眉页脚默认剔除。图片表格依旧可能丢失行列结构；跨页表格、多栏、复杂公式或低质量扫描件建议先用 MinerU 解析成 Markdown/JSON 再接入 `app/chunker.py`。
 
 ## 12. 重要限制
 
@@ -217,7 +246,8 @@ app/
 ├── config.py          # 环境变量与参数
 ├── logging_config.py  # 运行日志（控制台 + data/logs/app.log）
 ├── parse_log.py       # 解析日志：run.json / pages.jsonl / chunks.jsonl
-├── pdf_loader.py      # PDF 文本提取与 OCR
+├── text_utils.py      # 文本清洗（代理字符、图片标记、空行）
+├── pdf_loader.py      # PyMuPDF 2.x 解析：markdown + 版面块 + 页眉剔除
 ├── chunker.py         # 文本切块
 ├── embeddings.py      # 本地向量
 ├── vector_store.py    # Chroma 读写

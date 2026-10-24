@@ -4,17 +4,51 @@ import hashlib
 import json
 import logging
 import re
+import shutil
+import subprocess
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Iterator
 
 from app import config
+from app.text_utils import sanitize_text
 
 logger = logging.getLogger(__name__)
 
 PAGES_FILE = "pages.jsonl"
 CHUNKS_FILE = "chunks.jsonl"
 RUN_FILE = "run.json"
+
+# 日志 schema 版本：字段变动必须 +1，load_run() 会给旧记录补 1。
+LOG_SCHEMA_VERSION = 1
+EXTRACTOR = "pymupdf.to_markdown"
+
+
+def extractor_version() -> str:
+    """解析器版本，写入 run.json 便于复现；导入失败时不能影响日志。"""
+    try:
+        import pymupdf
+
+        return str(getattr(pymupdf, "__version__", "unknown"))
+    except Exception:  # pragma: no cover
+        return "unknown"
+
+
+def _sanitize_payload(value: Any) -> Any:
+    """递归清洗孤立代理字符，避免 json.dumps + utf-8 抛 UnicodeEncodeError。
+
+    本 PDF 第 17/18/23/31 页共 121 个孤立代理字符，实测会直接让写日志崩溃。
+    """
+    if isinstance(value, str):
+        return sanitize_text(value)
+    if isinstance(value, dict):
+        return {key: _sanitize_payload(item) for key, item in value.items()}
+    if isinstance(value, list):
+        return [_sanitize_payload(item) for item in value]
+    if isinstance(value, tuple):
+        return [_sanitize_payload(item) for item in value]
+    return value
+
 
 
 def now_iso() -> str:
@@ -36,11 +70,26 @@ def _safe_stem(name: str) -> str:
 
 
 def _tesseract_version() -> str | None:
-    if not config.TESSERACT_CMD:
-        return None
+    """记录 OCR 引擎版本，便于复现；任何失败都返回 None，不影响解析。"""
+    executable = config.TESSERACT_CMD or shutil.which("tesseract")
+    if executable:
+        try:
+            result = subprocess.run(
+                [executable, "--version"],
+                capture_output=True,
+                text=True,
+                timeout=10,
+            )
+            lines = (result.stdout or "").strip().splitlines()
+            if lines:
+                return lines[0].strip()
+        except Exception:
+            logger.debug("无法通过命令行读取 Tesseract 版本", exc_info=True)
     try:
         import pytesseract
 
+        if config.TESSERACT_CMD:
+            pytesseract.pytesseract.tesseract_cmd = config.TESSERACT_CMD
         return str(pytesseract.get_tesseract_version())
     except Exception:
         return None
@@ -53,20 +102,33 @@ def config_snapshot() -> dict[str, Any]:
         "chunk_overlap": config.CHUNK_OVERLAP,
         "embedding_model": config.EMBEDDING_MODEL,
         "collection": config.COLLECTION_NAME,
+        # 解析器与版面分析
+        "layout_enabled": config.LAYOUT_ENABLED,
+        "header_remove": config.HEADER_REMOVE,
+        "footer_remove": config.FOOTER_REMOVE,
+        "table_strategy": config.TABLE_STRATEGY,
+        # OCR
         "enable_ocr": config.ENABLE_OCR,
         "ocr_lang": config.OCR_LANG,
+        "ocr_dpi": config.OCR_DPI,
         "tesseract_cmd": config.TESSERACT_CMD,
         "tesseract_version": _tesseract_version(),
         "ocr_low_text_pages": config.OCR_LOW_TEXT_PAGES,
         "min_native_text_chars": config.MIN_NATIVE_TEXT_CHARS,
+        # 日志精度
+        "elements_included": config.PARSE_LOG_INCLUDE_ELEMENTS,
+        "element_text_max": config.PARSE_LOG_ELEMENT_TEXT_MAX,
+        # 入库
         "enable_indexing": config.ENABLE_INDEXING,
         "index_batch_size": config.INDEX_BATCH_SIZE,
     }
 
 
 def _write_json_atomic(path: Path, payload: dict[str, Any]) -> None:
+    """原子写入 JSON：先写临时文件再替换，避免中途崩溃留下半个 run.json。"""
     tmp = path.with_suffix(path.suffix + ".tmp")
-    tmp.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+    safe_payload = _sanitize_payload(payload)
+    tmp.write_text(json.dumps(safe_payload, ensure_ascii=False, indent=2), encoding="utf-8")
     tmp.replace(path)
 
 
@@ -137,6 +199,22 @@ class RunLogger:
             self.run_id = self.run_dir.name
 
         self._meta = {
+            "schema_version": LOG_SCHEMA_VERSION,
+            "extractor": EXTRACTOR,
+            "extractor_version": extractor_version(),
+            "layout_enabled": config.LAYOUT_ENABLED,
+            "header": {"remove": config.HEADER_REMOVE},
+            "footer": {"remove": config.FOOTER_REMOVE},
+            "ocr": {
+                "enabled": config.ENABLE_OCR,
+                "language": config.OCR_LANG,
+                "dpi": config.OCR_DPI,
+                "engine": "tesseract" if config.TESSERACT_CMD else "builtin",
+            },
+            "elements": {
+                "included": config.PARSE_LOG_INCLUDE_ELEMENTS,
+                "text_max": config.PARSE_LOG_ELEMENT_TEXT_MAX,
+            },
             "run_id": self.run_id,
             "source": self.pdf_path.name,
             "pdf_path": str(self.pdf_path),
@@ -170,7 +248,9 @@ class RunLogger:
         if not self.enabled or handle is None:
             return
         try:
-            handle.write(json.dumps(record, ensure_ascii=False) + "\n")
+            # 先清洗孤立代理字符，否则 utf-8 编码会抛 UnicodeEncodeError。
+            safe_record = _sanitize_payload(record)
+            handle.write(json.dumps(safe_record, ensure_ascii=False) + "\n")
             handle.flush()
         except Exception:
             logger.warning("写入解析日志失败: %s", record.get("page", record.get("chunk_id")), exc_info=True)
@@ -209,9 +289,9 @@ class RunLogger:
             except Exception:
                 logger.warning("写入 run.json 失败: %s", self.run_dir, exc_info=True)
             logger.info(
-                "解析完成 run_id=%s 页数=%s 切块=%s 状态=%s",
+                "解析完成 run_id=%s 模式=%s 切块=%s 状态=%s",
                 self.run_id,
-                self.counts.get("pages_total"),
+                self.counts.get("pages_by_mode", {}),
                 self.counts.get("chunks"),
                 self.status,
             )
@@ -261,6 +341,8 @@ def list_runs(limit: int | None = None, base_dir: Path | None = None) -> list[di
             logger.warning("无法读取 %s", run_file, exc_info=True)
             continue
         data.setdefault("run_id", directory.name)
+        # 旧日志没有 schema_version，补 1 以便读取侧做兼容分支。
+        data.setdefault("schema_version", 1)
         runs.append(data)
         if limit is not None and len(runs) >= limit:
             break
@@ -278,6 +360,7 @@ def load_run(run_id: str, base_dir: Path | None = None) -> dict[str, Any] | None
     except Exception:
         return None
     data.setdefault("run_id", run_id)
+    data.setdefault("schema_version", 1)
     data["run_dir"] = str(run_dir)
     return data
 
