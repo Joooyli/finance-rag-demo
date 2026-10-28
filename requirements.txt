@@ -7,9 +7,9 @@ python-dotenv==1.0.1
 openai==1.68.2
 chromadb==0.6.3
 sentence-transformers==3.4.1
-# 解析器：2.x 内置 layout 与 markdown 转换（pymupdf4llm 2.0 只是占位空包）
-pymupdf>=2,<3
-# OCR 触发条件之一，PyMuPDF 的 OCR 判定需要 OpenCV
+# 固定已验证的2.0接口；MinerU保留在独立环境，不进入本依赖文件。
+pymupdf==2.0
+# 保留PyMuPDF图像分析相关依赖；应用显式关闭其隐式OCR并自行进行质量路由。
 opencv-python>=4.8
 Pillow==11.1.0
 pytesseract==0.3.13

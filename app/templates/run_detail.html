@@ -1,86 +1,41 @@
 {% extends "base.html" %}
 {% block title %}解析详情 - RAG 控制台{% endblock %}
 {% block content %}
-<h1>解析详情 <span class="mono" style="font-size:14px">{{ run.run_id }}</span></h1>
-<p class="muted"><a href="/ui/runs">← 返回解析记录</a></p>
-
+<h1>{{ run.source }} <span class="mono">{{ run.run_id }}</span></h1>
+<p><a href="/ui/runs">返回解析记录</a> · <a href="/ui/runs/{{ run.run_id }}/source">下载对应版本PDF原件</a></p>
 <div class="cards">
-  <div class="card"><div class="label">文件</div><div class="value">{{ run.source }}</div></div>
-  <div class="card"><div class="label">状态</div><div class="value {{ 'ok' if run.status == 'success' else 'warn' }}">{{ run.status }}</div></div>
-  <div class="card"><div class="label">总页数</div><div class="value">{{ (run.counts or {}).get('pages_total', '') }}</div></div>
-  <div class="card"><div class="label">有文字页</div><div class="value">{{ (run.counts or {}).get('pages_with_text', '') }}</div></div>
-  <div class="card"><div class="label">切块数</div><div class="value">{{ chunk_total }}</div></div>
-  <div class="card"><div class="label">是否已入库</div><div class="value">{{ '是' if (run.index or {}).get('enabled') else '否' }}</div></div>
+<div class="card"><div class="label">解析</div><div class="value">{{ run.get('parse_status', run.get('status', 'unknown')) }}</div></div>
+<div class="card"><div class="label">质量</div><div class="value">{{ run.get('quality_status', 'unknown') }}</div></div>
+<div class="card"><div class="label">人工审阅</div><div class="value">{{ run.get('review_status', 'pending') }}</div></div>
+<div class="card"><div class="label">入库</div><div class="value">{{ run.get('index_status', 'not_indexed') }}</div></div>
+<div class="card"><div class="label">页数 / 切块</div><div class="value">{{ (run.counts or {}).get('pages_total', '?') }} / {{ chunk_total }}</div></div>
 </div>
-
-{% if run.error %}
-<p class="warn">失败原因：{{ run.error }}</p>
-{% endif %}
-
-<h2>本次解析参数</h2>
-<table>
-  <tbody>
-  {% for key, value in (run.config or {}).items() %}
-    <tr><th style="width:260px">{{ key }}</th><td class="mono">{{ value }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-<h2>解析方式分布</h2>
-{% set modes = (run.counts or {}).get('pages_by_mode', {}) %}
-{% if modes %}
-<table>
-  <thead><tr><th>方式</th><th>页数</th></tr></thead>
-  <tbody>
-  {% for mode, count in modes.items() %}
-    <tr><td class="mono">{{ mode }}</td><td class="num">{{ count }}</td></tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">没有记录解析方式（可能是旧版本生成的解析日志）。</p>
-{% endif %}
-
-{% if missing_pages %}
-<p class="warn">以下页没有任何可提取文字：{{ missing_pages|join(', ') }}</p>
-{% endif %}
-
+{% if run.get('error') %}<p class="warn">{{ run.error }}</p>{% endif %}
+{% if run.get('issues') %}<h2>待处理问题</h2><pre class="text">{{ run.issues|tojson(indent=2) }}</pre>{% endif %}
+{% if run.get('schema_version', 1) == 3 %}
+<h2>人工审阅</h2><p>检查逐页结果、跨页合并及最终入库文本。存在未解决问题时无法批准；批准绑定本次密封产物，内容改变后需要重新确认。</p>
+<form class="filters" method="post" action="/ui/runs/{{ run.run_id }}/review">
+<label>确认者<input name="reviewer" required maxlength="100"></label><label>决定<select name="decision"><option value="approved">确认通过</option><option value="rejected">拒绝</option></select></label>
+<label>备注<input name="notes" size="60" maxlength="10000"></label><button type="submit">提交人工审阅</button></form>
+<form method="post" action="/ui/runs/{{ run.run_id }}/index"><button type="submit">提交已确认记录入库</button></form>
+{% else %}<p class="warn">历史schema仅供查看，不能直接进入v3向量集合。</p>{% endif %}
+{% if missing_pages %}<p class="warn">缺失物理页记录：{{ missing_pages|join(', ') }}</p>{% endif %}
 <h2>逐页结果</h2>
-<table>
-  <thead>
-    <tr>
-      <th style="width:60px">页码</th>
-      <th style="width:110px">模式</th>
-      <th style="width:80px">版面块</th>
-      <th style="width:90px">原始字符</th>
-      <th style="width:80px">正文</th>
-      <th style="width:70px">切块</th>
-      <th>文本预览</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for page in pages %}
-    <tr id="page-{{ page.page }}">
-      <td class="num">{{ page.page }}</td>
-      <td class="mono">{{ page.mode }}{% if page.ocr_used %} <span class="badge">OCR</span>{% endif %}</td>
-      <td class="num">{{ page.elements_count }}</td>
-      <td class="num">{{ page.raw_chars }}</td>
-      <td class="num">{{ page.chars }}</td>
-      <td class="num">{{ page.chunks }}</td>
-      <td>
-        {% if page.chars > 0 %}
-        <div>{{ page.text[:160] }}{% if page.chars > 160 %}…{% endif %}</div>
-        <details><summary>展开该页全文</summary><pre class="text">{{ page.text }}</pre></details>
-        {% else %}
-        <span class="muted">（无文字）</span>
-        {% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-
-{% if not has_chunks_file %}
-<p class="warn">没有找到 chunks.jsonl：本次解析可能被中断，或解析日志功能被关闭。</p>
-{% endif %}
+<table><thead><tr><th>页码</th><th>路由 / 引擎</th><th>质量</th><th>相关切块数</th><th>正文 / 问题</th></tr></thead><tbody>
+{% for page in pages %}<tr id="page-{{ page.page }}"><td>{{ page.page }}</td><td>{{ page.get('route', page.get('mode', 'unknown')) }}<div>{{ page.get('engines_used', [])|join(', ') }}</div>{% if page.get('ocr_used') %}<span class="badge">OCR</span>{% endif %}</td>
+<td>{{ page.get('quality', {}).get('status', page.get('quality_status', page.get('status', 'unknown'))) }}</td><td>{{ page.chunks }}</td><td><details><summary>{{ page.get('text', '')[:160] or '无正文 / 查看问题' }}</summary>
+<pre class="text">{{ page.get('text', '') }}</pre>{% if page.get('quality', {}).get('issues') or page.get('issues') %}<pre class="text">{{ page.get('quality', {}).get('issues', page.get('issues', []))|tojson(indent=2) }}</pre>{% endif %}</details></td></tr>{% endfor %}</tbody></table>
+<h2>最终入库文本</h2>
+{% for chunk in chunks %}<details><summary>第{{ chunk.get('pages', [chunk.get('page')])|join(', ') }}页 · {{ chunk.get('content_type', '') }} · {{ chunk.chunk_id[:16] }}</summary>
+<pre class="text">{{ chunk.get('embedding_text', chunk.get('text', '')) }}</pre><pre class="text">{{ chunk.get('source_spans', [])|tojson(indent=2) }}</pre></details>{% endfor %}
+<h2>结构化区域与图像</h2>
+{% for block in blocks %}{% if block.type in ['table', 'formula', 'figure'] %}<details><summary>第{{ block.page }}页 · {{ block.type }} · {{ block.get('quality_status', '') }}</summary>
+{% if block.table_preview %}<div class="table-preview">{{ block.table_preview }}</div>{% endif %}<pre class="text">{{ block.content_text }}</pre>
+{% if block.get('latex') %}<pre class="text">{{ block.latex }}</pre>{% endif %}
+{% for asset in block.preview_assets %}{% if asset.is_image %}<a href="{{ asset.url }}"><img class="asset" src="{{ asset.url }}" alt="原始区域图像"></a>{% else %}<a href="{{ asset.url }}">下载 {{ asset.path }}</a>{% endif %}{% endfor %}
+</details>{% endif %}{% endfor %}
+<h2>跨页合并证据</h2>{% for merge in merges %}<details><summary>{{ merge.get('decision', '') }} · {{ merge.get('rule', merge.get('rule_version', '')) }}</summary><pre class="text">{{ merge|tojson(indent=2) }}</pre></details>{% endfor %}
+<h2>逻辑父块</h2>{% for block in logical_blocks %}<details><summary>{{ block.get('type', '') }} · {{ block.get('pages', [])|join(', ') }}</summary><pre class="text">{{ block|tojson(indent=2) }}</pre></details>{% endfor %}
+<h2>本次配置</h2><pre class="text">{{ run.get('config', {})|tojson(indent=2) }}</pre>
+{% if not has_chunks_file %}<p class="warn">缺少chunks.jsonl，记录不可入库。</p>{% endif %}
 {% endblock %}

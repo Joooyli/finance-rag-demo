@@ -1,39 +1,35 @@
-## 项目背景
-本地中文金融 PDF 知识库
-通过解析pdf文件，采用Python + 本地 PDF 解析与 OCR + 本地 Embedding + Chroma 向量库 + 云端 OpenAI 兼容大模型 API完成本地中文金融 PDF 知识库搭建。
+# 项目结构与处理链路
 
-解析与入库拆成两步：先解析并把每页、每个切块写入 data/parse_log，人工检查后再入库（由 ENABLE_INDEXING 与 scripts/index_parsed.py 控制）。
+当前实现为本地中文金融PDF混合解析与RAG。操作见[使用说明](docs/PDF混合解析使用说明.md)，逐文件变更见[改动记录](docs/PDF混合解析改动记录.md)。
 
-## 项目结构
-finance-rag-learning/
-├── app/
-│   ├── config.py          # 环境变量和参数（含 ENABLE_INDEXING、PARSE_LOG_*）
-│   ├── logging_config.py  # 运行日志（控制台 + data/logs/app.log）
-│   ├── parse_log.py       # 解析日志：run.json / pages.jsonl / chunks.jsonl
-│   ├── text_utils.py      # 文本清洗（代理字符、图片标记、空行）
-│   ├── pdf_loader.py      # PyMuPDF 2.x 解析：markdown、版面块、页眉剔除
-│   ├── chunker.py         # 文本切块
-│   ├── embeddings.py      # 本地向量计算
-│   ├── vector_store.py    # Chroma 建库与检索
-│   ├── rag_pipeline.py    # 解析阶段、入库阶段、检索、问答
-│   ├── web_ui.py          # /ui 可视化路由
-│   ├── templates/         # 页面模板（概览、切块、解析记录）
-│   └── api.py             # FastAPI 接口
-├── scripts/
-│   ├── parse_pdf.py       # 只解析并写日志，不入库
-│   ├── index_parsed.py    # 用已检查的解析日志入库（不重新解析）
-│   ├── reset_db.py        # 删除集合/切块/解析日志
-│   └── test_retrieval.py  # 本地检索测试
-├── tests/
-│   ├── test_chunker.py    # 切块单元测试
-│   └── test_parse_log.py  # 解析日志与 chunk_id 单元测试
-├── data/
-│   ├── source/            # PDF 原文件
-│   ├── chroma_db/         # 本地向量库
-│   ├── parse_log/         # 解析日志（每次解析一个目录）
-│   └── logs/              # 运行日志
-├── pytest.ini             # pytest 只收集 tests/ 目录
-├── requirements.txt
-├── .env.example
-├── .gitignore
-└── README.md
+```text
+固定PDF版本 → 页面/区域预检 → 原生文字/PyMuPDF、复杂内容/MinerU、普通文字OCR/Tesseract
+→ 结果融合 → 跨页逻辑块 → 类型与token预算切块 → 质量检查/密封 → 人工确认
+→ 本地Embedding → 暂存向量/核验 → 激活文档版本 → 本地检索 → 可选云端问答
+```
+
+| 文件 | 职责 |
+|---|---|
+| app/document_schema.py | 数据契约、稳定hash、来源标签 |
+| app/document_source.py | 文档身份和不可变PDF原件 |
+| app/page_geometry.py | 旋转/裁剪/归一化区域转换 |
+| app/pdf_loader.py | PyMuPDF预检、普通区域OCR、路由调度与结果保存 |
+| app/parse_router.py、parse_quality.py | 路由、正文所有权及质量问题 |
+| app/mineru_adapter.py | 独立本地standard进程、结构化产物、页码日志、缓存及取消 |
+| app/document_assembler.py | 跨页段落、续表、逻辑父块与证据 |
+| app/chunker.py、text_utils.py | 类型切块、结构保留、最终检索文本 |
+| app/embeddings.py | 本地模型身份、真实token预算与向量 |
+| app/parse_log.py、logging_config.py | v3产物与结构化运行事件 |
+| app/parse_review.py | 密封、人工审阅与入库校验 |
+| app/chunk_serializer.py | Chroma标量metadata转换 |
+| app/index_registry.py | SQLite文档/索引登记、暂存与活动版本 |
+| app/vector_store.py | Chroma读写、核验和活动版本过滤 |
+| app/rag_pipeline.py | 解析/索引编排、检索、上下文与引用 |
+| app/parse_jobs.py | 单worker后台队列、持久状态与重启中断 |
+| app/api.py、web_ui.py、templates/ | 上传、任务、审阅、检索及来源展示 |
+| scripts/parse_pdf.py | 只解析 |
+| scripts/review_parsed.py | 查看产物并显式人工确认/拒绝 |
+| scripts/index_parsed.py | 入库已确认产物 |
+| scripts/reset_db.py | 数据维护和来源产物保护 |
+
+原始输入收集在data/source；不可变版本在data/documents；v3审阅产物在data/parse_log；模型输出缓存在data/parser_cache；索引登记表为data/index_registry.sqlite3；任务状态在data/parse_jobs。旧Chroma集合保留，新集合使用HYBRID_COLLECTION_NAME。

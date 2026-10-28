@@ -6,9 +6,9 @@ PDF/图片 OCR → 文本切块 → 本地 BGE Embedding → 本地 Chroma → �
 
 ## 1. 环境要求
 
-- Windows 10/11 x64，推荐 Python 3.11 x64。
-- `chromadb==0.6.3` 固定依赖 `chroma-hnswlib==0.7.6`。该版本提供 Windows Python 3.11 x64 wheel，但没有 Windows Python 3.12/3.13 wheel。在 3.12/3.13 上 pip 会尝试源码编译，未安装 Microsoft C++ Build Tools 时报 `Microsoft Visual C++ 14.0 or greater is required`。
-- 解析器使用 **PyMuPDF 2.x**（`pymupdf>=2`），它内置版面分析（layout）与 Markdown 转换；`pymupdf4llm` 2.0 只是一个占位空包，不需要单独依赖。
+- Windows 10/11 x64，推荐 Python 3.12 x64。
+- `chromadb==0.6.3` 固定依赖 `chroma-hnswlib==0.7.6`。该版本提供 Windows Python 3.12 x64 wheel，但没有 Windows Python 3.12/3.13 wheel。在 3.12/3.13 上 pip 会尝试源码编译，未安装 Microsoft C++ Build Tools 时报 `Microsoft Visual C++ 14.0 or greater is required`。
+- 解析器使用 **PyMuPDF 2.x**（`pymupdf>=2`），它内置版面分析（layout）与 Markdown 转换；
 - layout 依赖 `onnxruntime`，OCR 触发还依赖 `opencv-python`，两者都在 `requirements.txt` 里。
 - OCR 需要 Tesseract，并安装 `chi_sim` 与 `eng` 语言包；PyMuPDF 通过 `PATH` 与 `TESSDATA_PREFIX` 找到它，代码会根据 `TESSERACT_CMD` 自动推导。
 - 普通办公电脑可先用 CPU；首次加载 `BAAI/bge-small-zh-v1.5` 需要网络，缓存后可离线。
@@ -21,7 +21,7 @@ PDF/图片 OCR → 文本切块 → 本地 BGE Embedding → 本地 Chroma → �
 ```powershell
 py -3.12 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-python -V                      # 此方案应显示 3.11.x；显示 3.12/3.13 说明用错了解释器
+python -V                      # 此方案应显示 3.12.x；显示 3.12/3.13 说明用错了解释器
 python -m pip install -r requirements.txt
 Copy-Item .env.example .env
 ```

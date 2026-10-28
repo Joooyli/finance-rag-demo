@@ -1,79 +1,30 @@
 {% extends "base.html" %}
 {% block title %}概览 - RAG 控制台{% endblock %}
 {% block content %}
-<h1>概览</h1>
-
+<h1>知识库与解析任务</h1>
 <div class="cards">
-  <div class="card">
-    <div class="label">集合</div>
-    <div class="value">{{ collection_name }}</div>
-  </div>
-  <div class="card">
-    <div class="label">已入库切块</div>
-    <div class="value">{{ chunk_total }}</div>
-  </div>
-  <div class="card">
-    <div class="label">解析记录</div>
-    <div class="value">{{ runs|length }}</div>
-  </div>
-  <div class="card">
-    <div class="label">入库开关 ENABLE_INDEXING</div>
-    <div class="value {{ 'ok' if indexing_enabled else 'warn' }}">{{ indexing_enabled }}</div>
-  </div>
-  <div class="card">
-    <div class="label">解析日志开关 PARSE_LOG_ENABLED</div>
-    <div class="value {{ 'ok' if parse_log_enabled else 'warn' }}">{{ parse_log_enabled }}</div>
-  </div>
+  <div class="card"><div class="label">当前集合</div><div class="value">{{ collection_name }}</div></div>
+  <div class="card"><div class="label">活动切块</div><div class="value">{{ chunk_total }}</div></div>
+  <div class="card"><div class="label">人工确认</div><div class="value">入库前必须确认</div></div>
 </div>
-
-<p class="muted">
-  数据库：{{ chroma_dir }}<br>
-  解析日志：{{ parse_log_dir }}
-</p>
-
-{% if not indexing_enabled %}
-<p class="warn">
-  当前 ENABLE_INDEXING=false：建库流程只会解析并写日志，不会写入向量库。检查通过后再打开该开关或执行
-  <span class="mono">python -m scripts.index_parsed</span>。
-</p>
-{% endif %}
-
-<h2>文件分布</h2>
-{% if sources %}
-<table>
-  <thead><tr><th>文件</th><th>切块数</th><th></th></tr></thead>
-  <tbody>
-  {% for name, count in sources %}
-    <tr>
-      <td>{{ name }}</td>
-      <td class="num">{{ count }}</td>
-      <td><a href="/ui/chunks?source={{ name|urlencode }}">查看切块</a></td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">当前集合为空。先执行解析：<span class="mono">python -m scripts.parse_pdf</span></p>
-{% endif %}
-
+<p>解析 → 检查并解决存疑项 → 人工确认 → 显式入库。上传时请求入库也会先停在待审阅。</p>
+<h2>后台任务</h2>
+<p class="muted">单个后台任务依次执行；MinerU运行期间可继续查看本页面，刷新获取最新状态。</p>
+{% if jobs %}
+<table><thead><tr><th>任务</th><th>类型</th><th>状态</th><th>结果 / 错误</th><th>时间</th></tr></thead><tbody>
+{% for job in jobs %}<tr>
+<td class="mono"><a href="/jobs/{{ job.job_id }}">{{ job.job_id }}</a></td><td>{{ job.kind }}</td><td>{{ job.status }}</td>
+<td>{% if job.run_id %}<a href="/ui/runs/{{ job.run_id }}">检查解析结果</a>{% endif %}{% if job.error %}<span class="warn">{{ job.error }}</span>{% endif %}</td>
+<td>{{ job.created_at }}</td></tr>{% endfor %}</tbody></table>
+{% else %}<p class="muted">暂无后台任务。</p>{% endif %}
+<h2>活动文件分布</h2>
+{% if sources %}<table><thead><tr><th>文件</th><th>切块数</th><th></th></tr></thead><tbody>
+{% for name, count in sources %}<tr><td>{{ name }}</td><td>{{ count }}</td><td><a href="/ui/chunks?source={{ name|urlencode }}">查看切块</a></td></tr>{% endfor %}
+</tbody></table>{% else %}<p class="muted">当前没有活动向量数据。</p>{% endif %}
 <h2>最近解析记录</h2>
-{% if runs %}
-<table>
-  <thead><tr><th>run_id</th><th>文件</th><th>状态</th><th>页数</th><th>切块</th><th>开始时间</th></tr></thead>
-  <tbody>
-  {% for run in runs %}
-    <tr>
-      <td class="mono"><a href="/ui/runs/{{ run.run_id }}">{{ run.run_id }}</a></td>
-      <td>{{ run.source }}</td>
-      <td class="{{ 'ok' if run.status == 'success' else 'warn' }}">{{ run.status }}</td>
-      <td class="num">{{ (run.counts or {}).get('pages_total', '') }}</td>
-      <td class="num">{{ (run.counts or {}).get('chunks', '') }}</td>
-      <td class="mono">{{ run.started_at }}</td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">还没有解析记录。</p>
-{% endif %}
+<table><thead><tr><th>文件 / 记录</th><th>解析</th><th>质量</th><th>人工审阅</th><th>入库</th></tr></thead><tbody>
+{% for run in runs %}<tr><td><a href="/ui/runs/{{ run.run_id }}">{{ run.source }} / {{ run.run_id }}</a></td>
+<td>{{ run.get('parse_status', run.get('status', 'unknown')) }}</td><td>{{ run.get('quality_status', 'unknown') }}</td>
+<td>{{ run.get('review_status', 'pending') }}</td><td>{{ run.get('index_status', 'not_indexed') }}</td></tr>{% endfor %}
+</tbody></table>
 {% endblock %}

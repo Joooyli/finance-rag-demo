@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import logging
+import json
+from datetime import datetime
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
@@ -9,6 +11,18 @@ from app import config
 _LOG_FORMAT = "%(asctime)s %(levelname)-7s %(name)s - %(message)s"
 _DATEFMT = "%Y-%m-%d %H:%M:%S"
 _CONFIGURED = False
+
+
+class JsonFormatter(logging.Formatter):
+    """文件日志机器可读，控制台继续显示逐页解析进度。"""
+
+    def format(self, record: logging.LogRecord) -> str:
+        payload = {"ts": datetime.fromtimestamp(record.created).astimezone().isoformat(),
+                   "level": record.levelname, "logger": record.name, "message": record.getMessage()}
+        payload.update(getattr(record, "event_data", {}))
+        if record.exc_info:
+            payload["exception"] = self.formatException(record.exc_info)
+        return json.dumps(payload, ensure_ascii=False, default=str)
 
 
 def configure_logging(level: str | None = None) -> None:
@@ -41,7 +55,7 @@ def configure_logging(level: str | None = None) -> None:
                 backupCount=3,
                 encoding="utf-8",
             )
-            file_handler.setFormatter(formatter)
+            file_handler.setFormatter(JsonFormatter())
             root.addHandler(file_handler)
         except Exception:  # pragma: no cover - logging must not break startup
             root.warning("无法写入日志文件，已仅使用控制台日志", exc_info=True)

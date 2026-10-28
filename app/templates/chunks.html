@@ -1,82 +1,19 @@
 {% extends "base.html" %}
 {% block title %}切块 - RAG 控制台{% endblock %}
 {% block content %}
-<h1>入库切块（{{ filtered_total }} / {{ total_in_collection }}）</h1>
-
+<h1>活动切块（{{ filtered_total }} / {{ total_in_collection }}）</h1>
 <form class="filters" method="get" action="/ui/chunks">
-  <label>关键词
-    <input type="text" name="q" value="{{ q }}" placeholder="文本包含的内容" size="26">
-  </label>
-  <label>文件
-    <select name="source">
-      <option value="">全部</option>
-      {% for name, count in sources %}
-      <option value="{{ name }}" {{ 'selected' if name == source else '' }}>{{ name }} ({{ count }})</option>
-      {% endfor %}
-    </select>
-  </label>
-  <label>页码
-    <input type="number" name="page" value="{{ page }}" min="1" size="6">
-  </label>
-  <label>每页条数
-    <select name="limit">
-      {% for size in [20, 50, 100, 200] %}
-      <option value="{{ size }}" {{ 'selected' if size == limit else '' }}>{{ size }}</option>
-      {% endfor %}
-    </select>
-  </label>
-  <button type="submit">筛选</button>
-  <a href="/ui/chunks"><button type="button" class="secondary">重置</button></a>
-</form>
-
-<div class="pager">
-  {% if prev_offset is not none %}
-  <a href="/ui/chunks?q={{ q|urlencode }}&source={{ source|urlencode }}&page={{ page }}&limit={{ limit }}&offset={{ prev_offset }}">← 上一页</a>
-  {% endif %}
-  <span class="muted">第 {{ offset + 1 }} – {{ offset + rows|length }} 条，共 {{ filtered_total }} 条</span>
-  {% if next_offset is not none %}
-  <a href="/ui/chunks?q={{ q|urlencode }}&source={{ source|urlencode }}&page={{ page }}&limit={{ limit }}&offset={{ next_offset }}">下一页 →</a>
-  {% endif %}
-</div>
-
-{% if rows %}
-<table>
-  <thead>
-    <tr>
-      <th style="width:70px">页码</th>
-      <th style="width:80px">块序号</th>
-      <th style="width:180px">文件</th>
-      <th style="width:80px">字符数</th>
-      <th>文本</th>
-      <th style="width:220px">chunk_id</th>
-    </tr>
-  </thead>
-  <tbody>
-  {% for row in rows %}
-    <tr id="{{ row.chunk_id }}">
-      <td class="num">{{ row.page }}</td>
-      <td class="num">{{ row.chunk_index }}</td>
-      <td>{{ row.source }}</td>
-      <td class="num">{{ row.chars }}</td>
-      <td>
-        {% set preview = row.text[:200] %}
-        <div>{{ preview }}{% if row.chars > 200 %}…{% endif %}</div>
-        {% if row.chars > 200 %}
-        <details>
-          <summary>展开全文</summary>
-          <pre class="text">{{ row.text }}</pre>
-        </details>
-        {% endif %}
-      </td>
-      <td class="mono">
-        <a href="/ui/chunks/{{ row.chunk_id }}">{{ row.chunk_id[:16] }}…</a>
-        {% if row.run_id %}<div class="muted">run: {{ row.run_id }}</div>{% endif %}
-      </td>
-    </tr>
-  {% endfor %}
-  </tbody>
-</table>
-{% else %}
-<p class="muted">没有匹配的切块。若集合为空，请先执行解析与入库。</p>
-{% endif %}
+<label>关键词<input name="q" value="{{ q }}"></label>
+<label>文件<select name="source"><option value="">全部</option>{% for name, count in sources %}<option value="{{ name }}" {{ 'selected' if name == source else '' }}>{{ name }} ({{ count }})</option>{% endfor %}</select></label>
+<label>来源页<input type="number" name="page" min="1" value="{{ page }}"></label>
+<label>每页条数<select name="limit">{% for size in [20, 50, 100, 200] %}<option value="{{ size }}" {{ 'selected' if size == limit else '' }}>{{ size }}</option>{% endfor %}</select></label>
+<button type="submit">筛选</button><a href="/ui/chunks">重置</a></form>
+<p class="muted">跨页切块可按其任一实际来源页筛选；暂存和旧版本不参与列表及计数。</p>
+<div class="pager">{% if prev_offset is not none %}<a href="/ui/chunks?q={{ q|urlencode }}&source={{ source|urlencode }}{% if page %}&page={{ page }}{% endif %}&limit={{ limit }}&offset={{ prev_offset }}">上一页</a>{% endif %}
+<span>共 {{ filtered_total }} 条</span>{% if next_offset is not none %}<a href="/ui/chunks?q={{ q|urlencode }}&source={{ source|urlencode }}{% if page %}&page={{ page }}{% endif %}&limit={{ limit }}&offset={{ next_offset }}">下一页</a>{% endif %}</div>
+<table><thead><tr><th>文件</th><th>来源页</th><th>类型 / 引擎</th><th>序号 / 字符</th><th>文本</th><th>详情</th></tr></thead><tbody>
+{% for row in rows %}<tr><td>{{ row.source }}</td><td>{{ row.page_label }}</td><td>{{ row.get('content_type', '') }} / {{ row.get('engine', '') }}</td>
+<td>{{ row.get('chunk_index', '') }} / {{ row.chars }}</td><td>{{ row.text[:200] }}{% if row.chars > 200 %}…{% endif %}</td>
+<td><a class="mono" href="/ui/chunks/{{ row.vector_record_id }}">{{ row.chunk_id[:16] }}…</a>{% if row.get('run_id') %}<div><a href="/ui/runs/{{ row.run_id }}">解析记录</a></div>{% endif %}</td></tr>{% endfor %}
+</tbody></table>{% if not rows %}<p class="muted">没有匹配的活动切块。</p>{% endif %}
 {% endblock %}

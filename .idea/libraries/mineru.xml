@@ -1,0 +1,10 @@
+<component name="libraryTable">
+  <library name="mineru">
+    <CLASSES>
+      <root url="jar://$PROJECT_DIR$/data/parser_cache/mineru/da95bdc72ce2f4fb71155b7ab8ffddc42c9cbfa21d33b01cb2b77ac70e9058b6.zip!/" />
+      <root url="jar://$PROJECT_DIR$/data/parser_cache/mineru/1286fa587bdfdcd33321474f94bc91000f829b4ecb8b657bb8a3d51c056661bc.zip!/" />
+    </CLASSES>
+    <JAVADOC />
+    <SOURCES />
+  </library>
+</component>

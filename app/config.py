@@ -1,4 +1,6 @@
 import os
+import json
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 
@@ -11,8 +13,13 @@ def env_path(name: str, default: str) -> Path:
 
 PDF_DIR = env_path("PDF_DIR", "data/source")
 CHROMA_DIR = env_path("CHROMA_DIR", "data/chroma_db")
-COLLECTION_NAME = os.getenv("COLLECTION_NAME", "finance_pdf_chunks")
+# 新链路单独使用v3集合，避免旧.env中的集合名把新旧schema混在一起。
+# LEGACY_COLLECTION_NAME = os.getenv("COLLECTION_NAME", "finance_pdf_chunks")
+COLLECTION_NAME = os.getenv("HYBRID_COLLECTION_NAME", "finance_pdf_chunks_v3")
 EMBEDDING_MODEL = os.getenv("EMBEDDING_MODEL", "BAAI/bge-small-zh-v1.5")
+EMBEDDING_REVISION = os.getenv("EMBEDDING_REVISION", "").strip()
+EMBEDDING_LOCAL_ONLY = os.getenv("EMBEDDING_LOCAL_ONLY", "true").lower() in {"1", "true", "yes"}
+EMBEDDING_MAX_TOKENS = int(os.getenv("EMBEDDING_MAX_TOKENS", "512"))
 LLM_BASE_URL = os.getenv("LLM_BASE_URL", "").strip()
 LLM_API_KEY = os.getenv("LLM_API_KEY", "").strip()
 LLM_MODEL = os.getenv("LLM_MODEL", "").strip()
@@ -37,6 +44,22 @@ def env_bool(name: str, default: bool) -> bool:
 # 页眉/页脚：广告类 PDF 的页眉多为重复宣传语，默认在解析阶段直接剔除。
 HEADER_REMOVE = env_bool("HEADER_REMOVE", True)
 FOOTER_REMOVE = env_bool("FOOTER_REMOVE", False)
+# 页眉只在所有引擎结果齐备后统一清洗一次。顶部比例仅限定候选范围，不直接裁页。
+HEADER_FILTER_TOP_RATIO = float(os.getenv("HEADER_FILTER_TOP_RATIO", "0.12"))
+HEADER_REPEAT_MIN_PAGES = int(os.getenv("HEADER_REPEAT_MIN_PAGES", "3"))
+HEADER_REPEAT_MIN_RATIO = float(os.getenv("HEADER_REPEAT_MIN_RATIO", "0.6"))
+HEADER_REPEAT_POSITION_TOLERANCE = float(os.getenv("HEADER_REPEAT_POSITION_TOLERANCE", "0.02"))
+_header_patterns = json.loads(os.getenv("HEADER_AD_PATTERNS", "[]"))
+if not isinstance(_header_patterns, list):
+    raise ValueError("HEADER_AD_PATTERNS必须是JSON数组")
+HEADER_AD_PATTERNS = tuple(_header_patterns)
+if not (0 < HEADER_FILTER_TOP_RATIO <= 0.3 and HEADER_REPEAT_MIN_PAGES >= 2
+        and 0 < HEADER_REPEAT_MIN_RATIO <= 1 and 0 <= HEADER_REPEAT_POSITION_TOLERANCE <= 0.1):
+    raise ValueError("页眉清洗的顶部比例、重复页数/比例或位置容差无效")
+if not all(isinstance(pattern, str) and pattern for pattern in HEADER_AD_PATTERNS):
+    raise ValueError("HEADER_AD_PATTERNS必须是非空正则字符串组成的JSON数组")
+for _header_pattern in HEADER_AD_PATTERNS:
+    re.compile(_header_pattern)
 # 版面分析（PyMuPDF Layout）：关闭后拿不到 page_boxes，elements 为空。
 LAYOUT_ENABLED = env_bool("LAYOUT_ENABLED", True)
 # markdown 表格识别策略：lines_strict / lines / text
@@ -60,3 +83,22 @@ PARSE_LOG_DIR = env_path("PARSE_LOG_DIR", "data/parse_log")
 LOG_DIR = env_path("LOG_DIR", "data/logs")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper() or "INFO"
 LOG_TO_FILE = env_bool("LOG_TO_FILE", True)
+
+# MinerU保持独立环境；这些值只注入子进程，不修改机器环境。
+MINERU_PYTHON = env_path("MINERU_PYTHON", r"E:\learn_space\mineru\env\.venv\Scripts\python.exe")
+MINERU_MODEL_BASE_DIR = env_path("MINERU_MODEL_BASE_DIR", r"E:\learn_space\mineru\model")
+MINERU_TIER = "standard"
+MINERU_ENABLED = env_bool("MINERU_ENABLED", True)
+MINERU_TIMEOUT_SECONDS = int(os.getenv("MINERU_TIMEOUT_SECONDS", "1800"))
+MINERU_MAX_CONCURRENCY = 1
+MINERU_CACHE_DIR = env_path("MINERU_CACHE_DIR", "data/parser_cache/mineru")
+DOCUMENT_DIR = env_path("DOCUMENT_DIR", "data/documents")
+INDEX_REGISTRY_PATH = env_path("INDEX_REGISTRY_PATH", "data/index_registry.sqlite3")
+PARSE_JOBS_DIR = env_path("PARSE_JOBS_DIR", "data/parse_jobs")
+OCR_TIMEOUT_SECONDS = int(os.getenv("OCR_TIMEOUT_SECONDS", "120"))
+ROUTING_COMPLEX_AREA_RATIO = float(os.getenv("ROUTING_COMPLEX_AREA_RATIO", "0.35"))
+MAX_INVALID_CHAR_RATIO = float(os.getenv("MAX_INVALID_CHAR_RATIO", "0.01"))
+ROUTING_RULE_VERSION = "hybrid-v1"
+PARSE_ARTIFACT_SCHEMA = 3
+# 人工确认是入库约束，不提供环境变量绕过开关。
+REVIEW_REQUIRED = True

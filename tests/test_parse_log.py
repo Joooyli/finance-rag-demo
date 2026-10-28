@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from app.parse_log import LOG_SCHEMA_VERSION, CHUNKS_FILE, PAGES_FILE, RUN_FILE, RunLogger, list_runs, load_run, load_run_chunks
+from app.parse_log import LOG_SCHEMA_VERSION, EXTRACTOR, CHUNKS_FILE, PAGES_FILE, RUN_FILE, RunLogger, list_runs, load_run, load_run_chunks
 from app.rag_pipeline import build_chunk_id
 
 def _fake_pdf(tmp_path: Path) -> Path:
@@ -30,7 +30,7 @@ def test_run_logger_writes_one_line_per_page_and_chunk(tmp_path):
     assert meta["counts"]["chunks"] == 1
     # schema 与解析器信息必须写入，便于追溯
     assert meta["schema_version"] == LOG_SCHEMA_VERSION
-    assert meta["extractor"] == "pymupdf.to_markdown"
+    assert meta["extractor"] == EXTRACTOR
     assert "extractor_version" in meta
 
 

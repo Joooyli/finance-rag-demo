@@ -10,3 +10,13 @@ data/parse_log/*
 data/logs/*
 !data/logs/.gitkeep
 .pytest_cache/
+
+# 混合解析新增的不可变原件、模型产物缓存及持久任务状态。
+data/documents/
+data/parser_cache/
+data/parse_jobs/
+data/index_registry.sqlite3*
+data/*.lock
+
+# 本机真实服务配置不作为源码提交。
+.env
